@@ -231,7 +231,7 @@ class MonteCarlo:
     def distribute_cards_to_table(self, Deck, table_card_list):
         remaningRandoms = 5 - len(table_card_list)
         for n in range(0, remaningRandoms):
-            table_card_list.append(Deck.pop(np.random.random_integers(0, len(Deck) - 1)))
+            table_card_list.append(Deck.pop(np.random.randint(0, len(Deck))))
         return table_card_list
 
     # pylint: disable=too-many-arguments

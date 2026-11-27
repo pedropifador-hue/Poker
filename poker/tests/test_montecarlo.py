@@ -157,7 +157,7 @@ class TestMonteCarlo(unittest.TestCase):
             for _ in range(testRuns):
                 start_time = time.time() + secs
                 logger = MagicMock()
-                Simulation.run_montecarlo(logger, my_cards, cards_on_table, players, 1, maxRuns=maxRuns,
+                Simulation.run_montecarlo(logger, my_cards, cards_on_table, players, 1, max_runs=maxRuns,
                                           timeout=start_time, ghost_cards='', opponent_range=opponent_range)
                 equity = Simulation.equity
                 total_result.append(equity * 100)

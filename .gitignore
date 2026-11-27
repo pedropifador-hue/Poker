@@ -235,3 +235,5 @@ Poker.code-workspace
 *.spec
 *.ipynb
 *.dmg
+# Saida do diagnostico local
+/diagnostico.txt

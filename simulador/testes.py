@@ -59,8 +59,7 @@ PROIBIDOS = {
 }
 
 FALHAS_CONHECIDAS = {
-    T + "test_montecarlo.py::TestMonteCarlo::test_monteCarlo":
-        "teste original desatualizado: usa o argumento 'maxRuns', o codigo usa 'max_runs'",
+    # test_monteCarlo foi corrigido na Fase 3 (argumento maxRuns -> max_runs) e voltou a passar.
 }
 
 
