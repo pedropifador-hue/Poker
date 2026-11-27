@@ -2,6 +2,27 @@
 
 Registro das mudanças feitas neste fork (`pedropifador-hue/Poker`). O código original do PokerBot (`poker/`) não foi modificado, exceto onde indicado.
 
+## [Fase 3] 27/11/2026 — Estabilidade, estratégias em simulação, janela e manual
+
+### Corrigido
+- `Abrir Pokerbot.bat`: verifica o servidor do desenvolvedor antes de abrir; sem servidor, mostra mensagem em português em vez de fechar com `ConnectionError`.
+- `poker/decisionmaker/montecarlo_python.py`: `np.random.random_integers` (obsoleto) → `np.random.randint` equivalente (mesma sequência aleatória).
+- `poker/tests/test_montecarlo.py`: argumento `maxRuns` → `max_runs`; o teste original volta a passar.
+- `.gitattributes`: arquivos `.bat` sempre com quebra de linha do Windows.
+
+### Adicionado
+- `Diagnostico.bat` + `ferramentas/diagnostico.py`: verificação de instalação, servidor, controle do mouse e log de erros.
+- `Abrir Simulador.bat` + `simulador/janela.py`: janela do Simulador Offline (Iniciar/Pausar/Parar, resultados, relatórios, testes).
+- `simulador/estrategias.py`: posições 6-max e ranges de abertura da tabela do desenvolvedor (`preflop.xlsx`).
+- `simulador/analise_estrategias.py` → `auditoria/fase3_estrategias.md`: Trial 2 e Official 1 reproduzidas offline.
+- `simulador/perfis/tag_6max_nl10.json`: perfil do ambiente de estudo (mesa, ranges por posição, iterações, rake, semente).
+- `MANUAL.md`: manual de uso para iniciantes.
+- Testes: `test_estrategias.py`, `test_janela.py`.
+
+### Não alterado
+- Interface original, menus, `config.ini` (inclusive o controle `w1064`) e estratégias do robô.
+- Mecanismos de assinatura/licenciamento.
+
 ## [Fase 2] 27/11/2026 — Validação matemática e simulador offline
 
 ### Adicionado

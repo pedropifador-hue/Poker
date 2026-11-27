@@ -4,7 +4,7 @@
 - **Repositório:** https://github.com/pedropifador-hue/Poker (fork de `dickreuter/Poker`)
 - **Versão do programa:** 6.76 (`poker/main.py:43`)
 - **Escopo:** apenas leitura e documentação. **Nenhuma estratégia, regra de licenciamento ou arquitetura foi alterada.**
-- **Fases:** Fase 1, auditoria (seções 1 a 11, tag `v6.76-auditoria-fase1`); **Fase 2, validação matemática e simulador offline (seção 12)**. Histórico de mudanças em [CHANGELOG.md](CHANGELOG.md).
+- **Fases:** Fase 1, auditoria (seções 1 a 11, tag `v6.76-auditoria-fase1`); Fase 2, validação matemática e simulador offline (seção 12); **Fase 3, estabilidade, análise de estratégias, janela do simulador e manual (seção 13)**. Manual de uso: [MANUAL.md](MANUAL.md). Histórico de mudanças em [CHANGELOG.md](CHANGELOG.md).
 
 ## Cenário de referência usado na avaliação
 
@@ -498,4 +498,107 @@ print(equity.resumo(), resultado.ev_bb)
 | `ad45fe8` | Comparação motor original x simulador |
 | `8fa067f` | Cenário 6-max, stacks efetivos, rake hipotético, isolamento |
 | `5f76ac1` | Executor de testes por categoria |
-| (este commit) | Documentação: `PROJECT_STATUS.md` e `CHANGELOG.md` |
+| `47037f8` | Documentação: `PROJECT_STATUS.md` e `CHANGELOG.md` |
+
+---
+
+## 13. Fase 3: estabilidade, estratégias em simulação, janela do simulador e manual
+
+### 13.1 Correções (erros comprovados)
+
+| Problema comprovado | Evidência | Correção | Arquivo |
+|---|---|---|---|
+| Sem o servidor do autor, o PokerBot fechava com `requests.exceptions.ConnectionError` (texto técnico em inglês) | Execução com a rede bloqueada: traceback em `UpdateChecker.check_update` → `get_internal` | O atalho verifica o servidor antes de abrir e mostra uma mensagem em português, sugerindo o Simulador | `Abrir Pokerbot.bat`, `ferramentas/diagnostico.py` |
+| Sem ferramenta de diagnóstico para leigos | — | `Diagnostico.bat`: Python, bibliotecas, OCR, `config.ini`, servidor (só conexão TCP, nada é enviado), controle do mouse e últimas linhas do log de erros | `Diagnostico.bat`, `ferramentas/diagnostico.py` |
+| `config.ini` aponta o controle para a VM `w1064` (herdada do autor); sem VirtualBox, o Start gera erros em ciclo | `deepmind_pokerbot_errors.log`: `Library not registered` / `No virtual machine found` | **Não alterado** (mudar para mouse direto faria o robô mover o mouse real). O diagnóstico agora explica a situação. | — |
+| `np.random.random_integers` está obsoleto (aviso; removido no NumPy 2) | `DeprecationWarning` nos testes | Trocado por `np.random.randint(0, len(Deck))`, que é equivalente e gera a mesma sequência aleatória | `poker/decisionmaker/montecarlo_python.py:234` |
+| Teste original `test_monteCarlo` quebrado (`maxRuns`) | `TypeError` | Argumento renomeado para `max_runs`; o teste **passa** (4/4) | `poker/tests/test_montecarlo.py:160` |
+| `.bat` com quebra de linha Unix | — | `.gitattributes` com `*.bat eol=crlf` | `.gitattributes` |
+
+Os defeitos matemáticos do motor original (seção 12.3) **continuam no robô**, como decidido na Fase 2: o motor original é preservado como referência. As versões corrigidas estão no simulador.
+
+### 13.2 O que a implementação realmente considera (confirmado no código)
+
+| Aspecto | Existe no robô? | Como (evidência) |
+|---|---|---|
+| Posição UTG/HJ/CO/BTN/SB/BB | **Parcial** | Só como número `position_utg_plus` (0 = UTG … 5 = BB, `table_screen_based.py:396`); não há nomes de posição. No modo de equity, a posição reduz a equity mínima pré-flop de forma linear (`decisionmaker.py:106`). |
+| Ranges por posição (próprios) | **Só com `preflop_override = 1`** | `preflop.xlsx` tem planilhas por posição e ação (`table.py:169-191`). Na Trial 2 e na Official 1 está **desligado**. A tabela tem 2 entradas mal formatadas (`A3`, `K7` na planilha `5C2`), que o robô nunca encontra. |
+| Ranges por posição (adversários) | **Só heads-up pós-flop** | `range_utg0..5` (`montecarlo_python.py:320-326`); em multiway usa um único `range_multiple_players`. |
+| Quantidade de adversários | **Parcial** | Pré-flop simulado sempre como heads-up; pós-flop com limite de 4 jogadores (seção 5.5). |
+| Profundidade de stack | **Não** | Só `always_call_low_stack_multiplier`; limites absolutos (`initialFunds`). |
+| Equity | **Sim, com defeitos** | Monte Carlo com empates contados como vitória (seção 12.3). |
+| Pot odds | **Calculadas, não usadas** | `maxCallEV` só vai para o log (seção 5.2). |
+| Agressividade pré-flop | **Sim** | Curvas `PreFlopBetPower`/`MinBetEquity`, `PreFlopMaxBetEquity` (slowplay), `increased_preflop_betting`. |
+| Agressividade pós-flop | **Sim** | Curvas por street, `minimum_bet_size`, faixas de blefe, check deception, pot bet no river. |
+| Rake | **Não** | Nenhuma referência no código. |
+| Heads-up x multiway | **Sim, regras diferentes** | Blefe e ajuste por perfil do jogador só em heads-up (`decisionmaker.py:248,437`); range do adversário por posição só em heads-up. |
+
+### 13.3 Estratégias em simulação offline (`auditoria/fase3_estrategias.md`)
+
+Reprodução das regras do robô com a **função de curva original** e as equities do simulador validado. Pote não aberto, % das 1326 combinações que **aumentam**:
+
+| Posição | Tabela do autor | Trial 2 (0,01/0,02) | Trial 2 (0,05/0,10) | Official 1 (0,01/0,02) | Official 1 (0,05/0,10) |
+|---|---|---|---|---|---|
+| UTG | 17,2% | 13,9% | 4,1% | 16,9% | 3,5% |
+| HJ | 22,0% | 19,2% | 5,0% | 19,9% | 3,8% |
+| CO | 28,8% | 23,5% | 6,9% | 25,5% | 5,6% |
+| BTN | 40,3% | 27,1% | 6,9% | 27,6% | 7,2% |
+| SB | 62,3% | 30,2% | 8,9% | 30,9% | 7,5% |
+
+Conclusões:
+1. A **tabela do autor** (`preflop.xlsx`) é a única configuração realmente posicional e tem perfil TAG (UTG ≈ 17%, BTN ≈ 40%). Ela fica desativada nas estratégias disponíveis.
+2. A **Trial 2** em escala calibrada é tight, mas **não aumenta com AA e KK** (só paga, por causa de `PreFlopMaxBetEquity = 0,78`).
+3. Na mesa **0,05/0,10** sem reescalar `bigBlind`, as duas estratégias ficam muito fechadas (≤ 9% de aumentos) e a Official 1 passa a dar muito limp (23–42%).
+4. No flop, como agressor heads-up, a Trial 2 aposta por valor em 12–18% das vezes e blefa em ~39% (faixa fixa de equity), com check em 43–49%. O blefe ignora a textura do board.
+5. Rake e stack não entram nas decisões. Com rake hipotético de 5% (teto 3 BB), a equity necessária para defender o BB contra 2,5 BB sobe de 30,0% para 31,6%.
+
+**Parâmetros das estratégias do robô: não alterados** (salvar exige assinatura, e não foi pedido).
+
+### 13.4 Configuração do ambiente de estudo (definida a partir dos resultados)
+
+Arquivo `simulador/perfis/tag_6max_nl10.json`, gerado por `python -m simulador.analise_estrategias`:
+
+| Parâmetro | Valor | Justificativa |
+|---|---|---|
+| Mesa | 0,05/0,10 · 6-max · até 200 BB | cenário pedido |
+| Ranges de abertura | tabela do autor por posição (UTG 17,2% … SB 62,3%) | única fonte posicional do projeto, com perfil TAG |
+| Ranges dos adversários | os mesmos ranges por posição, "qualquer mão" ou top X% | escolha na janela |
+| Iterações | 9.000 heads-up / 8.000 multiway | erro padrão ≤ 0,005 medido (0,0073 e 0,0069 com 4.000) |
+| Rake padrão | hipotético 5% com teto de 3 BB | estrutura comum de estudo; outras opções na janela |
+| Stack padrão | 100 BB | — |
+| Semente | 2026 | resultados reprodutíveis |
+
+### 13.5 Janela do Simulador (sem terminal)
+
+`Abrir Simulador.bat` abre `simulador/janela.py` (PyQt6, o mesmo kit gráfico do PokerBot):
+- **Simulação:** mão, mesa, posição, de 1 a 5 adversários, range, pote, call, stacks, rake; botões **Iniciar / Pausar-Continuar / Parar**; barra de progresso; equity, vitória/empate, margem de erro, odds do pote, equity necessária com rake, EV do call, EV do all-in e se a mão está no range da posição;
+- **Relatórios e manual:** exibe `MANUAL.md`, as análises das Fases 2 e 3, `PROJECT_STATUS.md` e `CHANGELOG.md`;
+- **Testes:** roda os testes offline com um clique.
+
+A interface original do PokerBot **não foi alterada**.
+
+### 13.6 Testes
+
+| Categoria | Resultado |
+|---|---|
+| Offline completo (`python -m simulador.testes offline-completo`, também pela aba Testes) | ✅ **124 aprovados, 0 falhas, nenhum teste excluído** (2 min 51 s), incluindo o `test_monteCarlo` original, agora corrigido |
+| Dependentes de rede / treino de rede neural | Não executados nesta fase |
+| `test_save_model` (envia dados) | Nunca executado |
+
+### 13.7 Limitações remanescentes
+
+1. O robô continua usando o motor original (defeitos P1 a P7 da seção 12.3) e as estratégias sem considerar rake e stack.
+2. O simulador avalia decisões isoladas (call e all-in), não a mão inteira com todas as streets.
+3. A análise pós-flop é aproximada: ignora outs e ajustes de segunda rodada, e o tamanho do pote é fixo.
+4. O rake é hipotético; os ranges dos adversários vêm da tabela do autor, não de dados reais de jogadores.
+5. Abrir o PokerBot, o Strategy Analyser, as mesas e as estratégias continuam dependendo do servidor do desenvolvedor.
+6. O controle `w1064` continua no `config.ini`; o Start não controla nada sem VirtualBox.
+
+### 13.8 Commits da Fase 3 (branch `master`)
+
+| Commit | Conteúdo |
+|---|---|
+| `3f1ff0b` | Estabilidade: abertura sem servidor, diagnóstico, compatibilidade NumPy, teste original |
+| `1bc92a2` | Análise offline das estratégias e perfil de estudo |
+| `9c1f60d` | Janela do Simulador e `Abrir Simulador.bat` |
+| (commit desta documentação) | Manual, documentação e relatório da Fase 3 regenerado |

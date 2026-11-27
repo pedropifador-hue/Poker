@@ -179,9 +179,15 @@ def gerar(rapido=False):
         melhores = ", ".join(sorted(a, key=lambda c: -tab[c]["robo"])[:8]) or "nenhuma"
         L.append(f"- **{n}** no BTN (escala calibrada): aumenta {melhores}…; "
                  f"premium que so pagam (limp): {', '.join(premium) or 'nenhuma'}.")
-    L += ["", "Leitura: o modo de equity (`preflop_override = 0`) **nao varia o range pela posicao** como a tabela do autor; "
-          "a posicao so reduz a equity minima em `pre_flop_equity_reduction_by_position` por passo. "
-          "Na mesa 0,05/0,10, sem reescalar `bigBlind`, os custos sao 5x maiores para a curva e o robo fica muito mais fechado.", ""]
+    cal = list(CENARIOS)[0]
+    faixas = "; ".join(
+        f"{n}: {_pct(acoes[(n, cal)]['UTG'][0]):.1f}% (UTG) a {_pct(acoes[(n, cal)]['SB'][0]):.1f}% (SB)"
+        for n in estrategias)
+    L += ["", "Leitura: no modo de equity (`preflop_override = 0`) a posicao so entra como uma reducao linear da "
+          "equity minima (`pre_flop_equity_reduction_by_position` por posicao apos o UTG). O range de aumento cresce "
+          f"menos que na tabela do autor ({_pct(autor['UTG'].classes):.1f}% a {_pct(autor['SB'].classes):.1f}%): "
+          f"{faixas}. Na mesa 0,05/0,10, sem reescalar `bigBlind`, os custos ficam 5x maiores para a curva "
+          "e o robo fica muito mais fechado.", ""]
 
     # 2. flop
     heroi = autor["BTN"]
