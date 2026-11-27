@@ -12,8 +12,9 @@ from simulador.seguranca import RedeBloqueada
 
 PASTA = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAIZ = os.path.dirname(PASTA)
-# comparacao.py importa o motor original APENAS como referencia (com a rede bloqueada)
-MODULOS = [f for f in os.listdir(PASTA) if f.endswith(".py") and f not in ("comparacao.py", "seguranca.py")]
+# comparacao.py e analise_estrategias.py importam o motor original APENAS como referencia (rede bloqueada)
+MODULOS = [f for f in os.listdir(PASTA) if f.endswith(".py")
+           and f not in ("comparacao.py", "analise_estrategias.py", "seguranca.py")]
 
 PROIBIDO = re.compile(r"\b(requests|urllib|http\.client|socket|collusion|conluio|pymouse|pyautogui|"
                       r"mouse_mover|vbox|mongo|game_logger|ImageGrab|from poker|import poker)\b")
