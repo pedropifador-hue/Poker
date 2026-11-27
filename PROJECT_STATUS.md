@@ -4,6 +4,7 @@
 - **Repositório:** https://github.com/pedropifador-hue/Poker (fork de `dickreuter/Poker`)
 - **Versão do programa:** 6.76 (`poker/main.py:43`)
 - **Escopo:** apenas leitura e documentação. **Nenhuma estratégia, regra de licenciamento ou arquitetura foi alterada.**
+- **Fases:** Fase 1, auditoria (seções 1 a 11, tag `v6.76-auditoria-fase1`); **Fase 2, validação matemática e simulador offline (seção 12)**. Histórico de mudanças em [CHANGELOG.md](CHANGELOG.md).
 
 ## Cenário de referência usado na avaliação
 
@@ -263,6 +264,8 @@ Servidor do autor: **`https://dickreuter.com:7778/`** (chave `db` em `poker/conf
 
 ## 8. Testes e simulações 100% offline
 
+> **Atualizado na Fase 2:** o ambiente offline recomendado agora é o pacote `simulador/` com o executor `python -m simulador.testes` (seção 12). Os scripts de `auditoria/` da Fase 1 continuam válidos como evidência.
+
 ### O que funciona sem internet
 - Monte Carlo (`decisionmaker/montecarlo_python.py`), cálculo de outs (`outs_calculator.py`), curvas (`curvefitting.py`) e a tabela pré-flop local.
 - Testes `test_montecarlo.py` e `test_outs.py` (não chamam o servidor).
@@ -334,7 +337,8 @@ Curvas da Trial 2 (lê `auditoria/estrategias_snapshot.json`, sem rede):
 | Branch atual | `master` (rastreia `origin/master`); é a única branch do fork |
 | Remoto | `origin` → https://github.com/pedropifador-hue/Poker.git |
 | Sincronização antes desta auditoria | Local e GitHub idênticos em `6ad6b46` (verificado com `git fetch` + `git rev-parse`) |
-| Branch de desenvolvimento | Na confirmação desta etapa foi escolhido **manter o trabalho no `master`**; nenhuma branch nova foi criada |
+| Branch de desenvolvimento | Por decisão do usuário, **todo o trabalho segue no `master`**; nenhuma branch nova foi criada |
+| Tag do estado auditado | `v6.76-auditoria-fase1` → commit `0163ef2` (enviada ao GitHub) |
 | Alteração local não commitada | `poker/config.ini`: `last_strategy` mudou de "Official 1" para "Trial 2" ao selecionar a estratégia na interface. É preferência local e **não** foi incluída no commit. |
 
 ### Arquivos adicionados nesta auditoria (sem alterar o código original)
@@ -356,3 +360,142 @@ Curvas da Trial 2 (lê `auditoria/estrategias_snapshot.json`, sem rede):
 8. Seis parâmetros não têm efeito (`CoveredPlayersCallLikelihoodFlop`, `antibluff_percentage`, bully ×3, `range_utg6-8` em 6-max) e um quebra o programa se ativado (`use_relative_equity`).
 9. A interface e o salvamento de estratégias dependem do servidor do autor; salvar exige assinatura.
 10. A função de conluio existe e deve permanecer desligada.
+
+---
+
+## 12. Fase 2: validação matemática e simulador offline
+
+### 12.1 O que foi construído
+
+Um pacote **novo e isolado**, `simulador/`, separado da execução do PokerBot. O motor original (`poker/decisionmaker/montecarlo_python.py`) **não foi alterado** e serve só de referência de comparação.
+
+| Arquivo | Função |
+|---|---|
+| `simulador/cartas.py` | Cartas 0–51, conversão de texto (`'AS'`), classes de mão (`AKS`, `AKO`, `AA`) |
+| `simulador/avaliador.py` | Avaliador de 5 a 7 cartas escrito do zero (não reutiliza o código original) |
+| `simulador/ranges.py` | Ranges por **combinações** (correto) ou por **classes** (modo do original, para comparação) |
+| `simulador/equity.py` | Monte Carlo com semente, empates divididos 1/k, 2 a 10 jogadores, enumeração exata |
+| `simulador/cenario.py` | Mesa 6-max 0,05/0,10, stack máximo de 200 BB, stack efetivo, odds do pote, equity necessária, EV de call/all-in e estruturas **hipotéticas** de rake |
+| `simulador/seguranca.py` | Bloqueio de rede (socket/DNS) usado em todos os testes do simulador |
+| `simulador/comparacao.py` | Gera `auditoria/fase2_comparacao.md` (antes x depois) com a rede bloqueada |
+| `simulador/testes.py` | Executor de testes por categoria |
+| `simulador/tests/` | 88 testes (avaliador, equity, cenário, isolamento, comparação) |
+
+**Garantias de isolamento**, verificadas por `test_isolamento.py`:
+- nenhum módulo do simulador usa `requests`, `urllib`, `socket` (exceto o bloqueador), mouse, captura de tela, VirtualBox, banco do autor ou conluio;
+- importar o simulador não carrega nenhum módulo `poker.*` nem `requests`;
+- qualquer conexão de rede durante os testes gera `RedeBloqueada`.
+
+### 12.2 Validação matemática: resultados esperados x obtidos
+
+| Item validado | Referência | Esperado | Obtido (simulador) | Situação |
+|---|---|---|---|---|
+| Contagem das 2.598.960 mãos de 5 cartas | Combinatória clássica | SF 40 · quadra 624 · full 3.744 · flush 5.108 · sequência 10.200 · trinca 54.912 · 2 pares 123.552 · par 1.098.240 · carta alta 1.302.540 | idêntico | ✅ exato |
+| Vitória por outs no turn (AhKh x QsQd, 2h7hQc3s) | Fórmula fechada | 7/44 = 0,1591 | 0,1591 (enumeração) | ✅ exato |
+| Vitória no flop (AA x KK, 2c7d9h) | Fórmula fechada | 907/990 = 0,9162 | 0,9162 | ✅ exato |
+| AA x KK pré-flop | Tabelas clássicas | ≈ 0,82 | enumeração exata dos 1.712.304 boards dentro de ±0,01; Monte Carlo dentro de 4 erros-padrão | ✅ |
+| Empate total (board royal flush) | Regra | vitória 0, empate 100%, equity 0,5 | 0, 100%, 0,500 | ✅ |
+| Pote dividido em 3 | Regra | 1/3 cada | 1/3 cada | ✅ |
+| Simetria AsAh x AdAc | Simetria | 0,5; empate ≈ 95% | 0,5 ± 0,01; empate entre 93% e 97% | ✅ |
+| AA x 1…5 aleatórias (2 a 6 jogadores) | Tabelas clássicas | 0,852 / 0,735 / 0,639 / 0,559 / 0,492 | 0,850 / 0,731 / 0,639 / 0,558 / 0,489 | ✅ (tol. ±0,012) |
+| 72o x 1 aleatória | Tabelas clássicas | ≈ 0,346 | 0,346–0,350 (vitória 0,32 + metade de empates de 0,06) | ✅ |
+| Soma das equities (6 jogadores) | Conservação | 1,0 | 1,0 | ✅ |
+| Unicidade das cartas (6 jogadores + board, 3.000 mãos) | Regra | 17 cartas distintas | sempre distintas | ✅ |
+| Uniformidade das cartas do board | Qui-quadrado | p > 0,001 | aprovado | ✅ |
+| Mãos dentro do range (5%, 10%, 25%, 50%) | Definição | 100% | 100% | ✅ |
+| Frequência AA : AKs : AKo no range | Combinações 6 : 4 : 12 | proporcional | qui-quadrado aprovado | ✅ |
+| Reprodutibilidade | Mesma semente | resultados idênticos | idênticos | ✅ |
+| Convergência | Erro ∝ 1/√n | erro cai ~2× ao quadruplicar n; erro real < 4 erros-padrão | razão entre 1,7 e 2,3; aprovado em n = 1k, 4k, 16k | ✅ |
+| Comparação com implementação independente | Teste diferencial com o avaliador original (200.000 confrontos) | — | 9 divergências, todas com quadra no board (defeito do original) | ✅ explicado |
+
+### 12.3 Problemas confirmados no motor original (com evidência)
+
+Fonte: `auditoria/fase2_comparacao.md` e `simulador/tests/test_comparacao_motor_original.py`.
+
+| # | Problema | Evidência (antes) | Depois (simulador) |
+|---|---|---|---|
+| P1 | **Empate conta como vitória inteira** do robô | 72o = 0,380 no original, que é igual a vitória + empate (0,321 + 0,059) | 0,350 (empate dividido) |
+| P2 | **Straight flush usa uma carta extra** como desempate: com board AsKsQsJsTs, um vilão com qualquer espada "vence" | Original 0,672 (teoria: 741/1081 = 0,685) | 0,500 |
+| P3 | **Desempate errado com quadra no board** (`calc_score`, linhas 79-82) | 9 em 200.000 confrontos; ex.: board 2222K, KC4D x 8D5H: original diz "perde" | empate |
+| P4 | **Vazamento de range:** cartas sorteadas diferentes das validadas (`pop` desloca índices, linhas 224-225) | 83,5% das mãos dentro do top 10% | 100% |
+| P5 | **Range medido em classes, não em combinações** | "top 10%" = 16 classes = 7,8% das combinações | top 10% = 21 classes = 10,1% (modo `classes` disponível para comparar) |
+| P6 | **Número de adversários reduzido** (pré-flop sempre heads-up; pós-flop no máximo `total_players − 2` = 4 jogadores) | AA com 5 adversários: original 0,855 (pré-flop) / 0,643 (pós-flop) | 0,491 (referência 0,492) |
+| P7 | **Não reprodutível:** usa `np.random` global sem semente | — | semente explícita (`semente=`) |
+| P8 | Teste original `test_monteCarlo` desatualizado (`maxRuns` x `max_runs`) | `TypeError` | registrado como falha conhecida; o teste original não foi alterado |
+
+### 12.4 Hipóteses descartadas
+
+| Hipótese | Resultado | Evidência |
+|---|---|---|
+| "O Monte Carlo original está errado em geral" | **Descartada** | AA x 1 aleatória: original 0,855, simulador 0,853, referência 0,852. O desvio só aparece onde há empate. |
+| "A equity de AA x top 10% (0,849) era anômala" | **Descartada** | Com as mesmas 16 classes, o simulador dá 0,840 e o original 0,851. AA domina quase todo o top 10%. |
+| "A distribuição de cartas do oponente no original é enviesada" (pelo `randint(0, len−1)`) | **Não confirmada** | Qui-quadrado p = 0,099 em 40.000 distribuições (sem evidência de viés a 1%) |
+
+### 12.5 Alterações realizadas
+
+- **Nenhuma** alteração em `poker/` (motor, estratégia, scraper, GUI, licenciamento). Parâmetros da Trial 2 **inalterados**.
+- Correções feitas **somente** no componente isolado `simulador/`: P1 a P7 estão corrigidos lá; P8 ficou só documentado.
+- Arquivos novos: `simulador/**`, `auditoria/fase2_comparacao.md`, `CHANGELOG.md`. Arquivo atualizado: `PROJECT_STATUS.md`.
+
+### 12.6 Classificação dos testes
+
+| Categoria | Arquivos | Como rodar | Situação |
+|---|---|---|---|
+| **Unitários offline** | `simulador/tests/*` (88), `poker/tests/test_outs.py` (15), `poker/tests/test_montecarlo.py` (3 + 1 falha conhecida) | `python -m simulador.testes offline` (rápido) ou `offline-completo` | ✅ `offline-completo`: **106 aprovados**, 0 falhas, 1 falha conhecida excluída (3 min 50 s). `offline`: 104 aprovados, mais 1 falha conhecida quando incluída (`--incluir-falhas-conhecidas`). |
+| **Dependentes de rede (só leitura)** | `test_table_and_ocr.py` (9), `test_tensorflow.py::test_load_nn_model` | `python -m simulador.testes rede --confirmar` | Não executados na Fase 2 (resultado da Fase 1: 10 aprovados) |
+| **Desativados pelo autor** | `test_decision.py` (14), `test_reverseTables.py` (1) | — (skip no código) | Não executados |
+| **Treinamento de rede neural** | `test_tensorflow.py::test_train_card_neural_network_and_predict` | `python -m simulador.testes treino --confirmar` | Não executado na Fase 2 (> 25 min na Fase 1) |
+| **Proibido (envia dados)** | `test_tensorflow.py::test_save_model` | **nunca** (o executor sempre o exclui) | Não executado |
+
+Na Fase 2 só foram executados testes offline; nenhum teste que envia dados ao servidor foi rodado.
+
+### 12.7 Como reproduzir
+
+Na pasta do projeto, no PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -m simulador.testes listar
+```
+```powershell
+.\.venv\Scripts\python.exe -m simulador.testes offline
+```
+```powershell
+.\.venv\Scripts\python.exe -m simulador.testes offline-completo
+```
+```powershell
+.\.venv\Scripts\python.exe -m simulador.comparacao
+```
+
+Exemplo de estudo no cenário de referência, salvo em um arquivo `.py` na pasta do projeto:
+
+```python
+from simulador.cenario import estudar_allin, ESTRUTURAS_RAKE_HIPOTETICAS
+from simulador.ranges import Range
+
+# Heroi no BB (investiu 0,10) com AKs, 150 BB; vilao no SB empurra 200 BB com top 15%
+resultado, equity = estudar_allin("AS KS", Range.top(0.15), stack_heroi=15.0, stack_vilao=20.0,
+                                  investido_heroi=0.10, rake=ESTRUTURAS_RAKE_HIPOTETICAS["5%_teto_3bb"],
+                                  iteracoes=20000, semente=1)
+print(equity.resumo(), resultado.ev_bb)
+```
+
+### 12.8 Limitações remanescentes
+
+1. **O PokerBot continua usando o motor original** com os defeitos P1 a P7. O simulador é um ambiente de estudo à parte e não muda as decisões do robô.
+2. O simulador calcula **equity e EV de decisões isoladas** (call, all-in). Ele não simula a árvore completa de apostas (várias streets, tamanhos de aposta, fold equity) nem as estratégias do Strategy Editor.
+3. O rake é **hipotético** e simplificado: percentual + teto + "no flop, no drop", sem arredondamento de centavos e sem regras específicas de sala.
+4. Desempenho: Python puro, cerca de 20 mil simulações por segundo heads-up; a enumeração exata pré-flop leva cerca de 1,5 min.
+5. A ordenação de ranges usa a tabela `preflop_equity.json` do próprio projeto, que foi gerada pelo motor original (com empates contados como vitória). A ordem relativa das mãos é razoável, mas não é uma referência independente.
+6. Os testes originais `test_decision.py` e `test_reverseTables.py` continuam desativados pelo autor e dependem do servidor.
+
+### 12.9 Commits e pushes da Fase 2 (branch `master`)
+
+| Commit | Conteúdo |
+|---|---|
+| tag `v6.76-auditoria-fase1` | Marca o estado auditado (`0163ef2`) |
+| `23a13cf` | Avaliador de mãos independente + testes |
+| `ccd4808` | Motor de equity, ranges e validação matemática |
+| `ad45fe8` | Comparação motor original x simulador |
+| `8fa067f` | Cenário 6-max, stacks efetivos, rake hipotético, isolamento |
+| `5f76ac1` | Executor de testes por categoria |
+| (este commit) | Documentação: `PROJECT_STATUS.md` e `CHANGELOG.md` |
